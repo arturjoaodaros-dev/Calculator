@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Calculator Premium</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="root"></div>
+
+  <!-- React (CDN) -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+
+  <script>
+    const { useEffect, useMemo, useState } = React;
+
+    const PREMIUM_PRICE = 24.99;
+
+    function formatNumber(value) {
+      if (!isFinite(value)) return "Error";
+      const rounded = Math.round(value * 1e12) / 1e12;
+      if (Number.isInteger(rounded)) return String(rounded);
+      return String(rounded);
+    }
+
+    function safeParseNumber(s) {
+      if (s === "" || s === "-" || s === ".") return NaN;
+      return Number(s);
+    }
+
+    function compute(a, op, b) {
+      switch (op) {
+        case "+": return a + b;
+        case "-": return a - b;
+        case "*": return a * b;
+        case "/": return b === 0 ? NaN : a / b;
+        default: return NaN;
+      }
+    }
+
+    function Calculator() {
+      const operators = useMemo(() => new Set(["+", "-", "*", "/"]), []);
+
+      const [left, setLeft] = useState(null);
+      const [op, setOp] = useState(null);
+      const [right, setRight] = useState(""); // string input
+      const [justEvaluated, setJustEvaluated] = useState(false);
+
+      const [isPremiumOpen, setIsPremiumOpen] = useState(false);
+
+      function openPremium() {
+        setIsPremiumOpen(true);
+      }
+
+      function closePremium() {
+        setIsPremiumOpen(false);
+      }
+
+      function clearAll() {
+        setLeft(null);
+        setOp(null);
+        setRight("");
+        setJustEvaluated(false);
+      }
+
+      function backspace() {
+        if (justEvaluated) return;
+        if (right.length > 0) setRight(prev => prev.slice(0, -1));
+      }
+
+      function inputDigit(d) {
+        setJustEvaluated(false);
+        setRight(prev => {
+          const current = prev;
+
+          if (justEvaluated) {
+            setLeft(null);
+            setOp(null);
+            return d;
+          }
+
+          if (current === "0") return d;
+          if (current === "" && d === "0") return "0";
+          return current + d;
+        });
+      }
+
+      function inputDecimal() {
+        setJustEvaluated(false);
+        setRight(prev => {
+          if (prev.includes(".")) return prev;
+          if (prev === "" || prev === "-") return (prev === "-" ? "-0." : "0.");
+          return prev + ".";
+        });
+      }
+
+      function negateCurrent() {
+        setJustEvaluated(false);
+        setRight(prev => {
+          if (prev === "" || prev === "0") return "-0";
+          if (prev.startsWith("-")) return prev.slice(1);
+          return "-" + prev;
+        });
+      }
+
+      function percentCurrent() {
+        setJustEvaluated(false);
+        const v = safeParseNumber(right);
+        if (!isFinite(v)) return;
+        const out = formatNumber(v / 100);
+        setRight(out === "Error" ? "" : out);
+      }
+
+      function applyOperator(nextOp) {
+        setJustEvaluated(false);
+
+        if (left === null) {
+          const v = right === "" ? 0 : safeParseNumber(right);
+          if (!isFinite(v)) return;
+          setLeft(v);
+          setOp(nextOp);
+          setRight("");
+          return;
+        }
+
+        if (right === "") {
+          // replace operator
+          setOp(nextOp);
+          return;
+        }
+
+        const b = safeParseNumber(right);
+        if (!isFinite(b)) return;
+
+        const result = compute(left, op, b);
+        if (!isFinite(result)) {
+          setLeft(null);
+          setOp(null);
+          setRight("");
+          setJustEvaluated(true);
+          return;
+        }
+
+        setLeft(result);
+        setOp(nextOp);
+        setRight("");
+      }
+
+      function equalsInternal() {
+        if (left === null || !op) {
+          const v = safeParseNumber(right);
+          if (!isFinite(v)) {
+            clearAll();
+            return;
+          }
+          setLeft(v);
+          setOp(null);
+          setRight("");
+          setJustEvaluated(true);
+          return;
+        }
+
+        const b = right === "" ? 0 : safeParseNumber(right);
+        if (!isFinite(b)) return;
+
+        const result = compute(left, op, b);
+        if (!isFinite(result)) {
+          clearAll();
+          return;
+        }
+
+        setLeft(result);
+        setOp(null);
+        setRight("");
+        setJustEvaluated(true);
+      }
+
+      function premiumEquals(e) {
+        if (e && e.preventDefault) e.preventDefault();
+        openPremium();
+        equalsInternal();
+      }
+
+      function premiumOperator(opSymbol, e) {
+        if (e && e.preventDefault) e.preventDefault();
+        openPremium();
+        applyOperator(opSymbol);
+      }
+
+      function premiumPercent(e) {
+        if (e && e.preventDefault) e.preventDefault();
+        openPremium();
+        percentCurrent();
+      }
+
+      function premiumNegate(e) {
+        if (e && e.preventDefault) e.preventDefault();
+        openPremium();
+        negateCurrent();
+      }
+
+      const rightValue = useMemo(() => safeParseNumber(right), [right]);
+      const rightDisplay = useMemo(() => {
+        if (right === "" || right === "-") return "0";
+        if (right.endsWith(".")) return right;
+        return formatNumber(rightValue);
+      }, [right, rightValue]);
+
+      const expressionDisplay = useMemo(() => {
+        if (left === null) return "";
+        if (!op) return String(left);
+        return `${formatNumber(left)} ${op}`;
+      }, [left, op]);
+
+      const currentMainValue =
+        justEvaluated && left !== null && right === ""
+          ? formatNumber(left)
+          : rightDisplay;
+
+      useEffect(() => {
+        function onKeyDown(e) {
+          const key = e.key;
+
+          if (key >= "0" && key <= "9") return inputDigit(key);
+          if (key === ".") return inputDecimal();
+
+          if (key === "+") return applyOperator("+");
+          if (key === "-") return applyOperator("-");
+
+          if (key === "*" || key === "/") {
+            e.preventDefault();
+            openPremium();
+            return applyOperator(key);
+          }
+
+          if (key === "%") {
+            e.preventDefault();
+            openPremium();
+            return percentCurrent();
+          }
+
+          if (key === "Enter" || key === "=") {
+            e.preventDefault();
+            openPremium();
+            return equalsInternal();
+          }
+
+          if (key === "Backspace") {
+            e.preventDefault();
+            return backspace();
+          }
+
+          if (key === "Escape") {
+            e.preventDefault();
+            if (isPremiumOpen) return closePremium();
+            return clearAll();
+          }
+        }
+
+        window.addEventListener("keydown", onKeyDown);
+        return () => window.removeEventListener("keydown", onKeyDown);
+      }, [left, op, right, justEvaluated, isPremiumOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+
+      const buttons = [
+        { label: "AC", action: clearAll, className: "btn btn-utility", key: "AC" },
+        { label: "⌫", action: backspace, className: "btn btn-utility", key: "BS" },
+
+        { label: "%", action: premiumPercent, className: "btn btn-utility", key: "%" },
+        { label: "±", action: premiumNegate, className: "btn btn-utility", key: "NEG" },
+
+        { label: "7", action: () => inputDigit("7"), className: "btn", key: "7" },
+        { label: "8", action: () => inputDigit("8"), className: "btn", key: "8" },
+        { label: "9", action: () => inputDigit("9"), className: "btn", key: "9" },
+        { label: "÷", action: (e) => premiumOperator("/", e), className: "btn btn-operator", key: "/" },
+
+        { label: "4", action: () => inputDigit("4"), className: "btn", key: "4" },
+        { label: "5", action: () => inputDigit("5"), className: "btn", key: "5" },
+        { label: "6", action: () => inputDigit("6"), className: "btn", key: "6" },
+        { label: "×", action: (e) => premiumOperator("*", e), className: "btn btn-operator", key: "*" },
+
+        { label: "1", action: () => inputDigit("1"), className: "btn", key: "1" },
+        { label: "2", action: () => inputDigit("2"), className: "btn", key: "2" },
+        { label: "3", action: () => inputDigit("3"), className: "btn", key: "3" },
+        { label: "-", action: () => applyOperator("-"), className: "btn btn-operator", key: "-" },
+
+        { label: "0", action: () => inputDigit("0"), className: "btn btn-zero", key: "0" },
+        { label: ".", action: inputDecimal, className: "btn", key: "." },
+        { label: "+", action: () => applyOperator("+"), className: "btn btn-operator", key: "+" },
+        { label: "=", action: premiumEquals, className: "btn btn-equal", key: "=" },
+      ];
+
+      return React.createElement(
+        "div",
+        { className: "calculator" },
+        React.createElement(
+          "div",
+          { className: "display", id: "display" },
+          React.createElement(
+            "div",
+            { className: "display-expression", "aria-hidden": "true" },
+            expressionDisplay
+          ),
+          React.createElement(
+            "div",
+            { className: "display-main", "aria-live": "polite" },
+            currentMainValue
+          )
+        ),
+
+        React.createElement(
+          "div",
+          { className: "buttons" },
+          buttons.map(b =>
+            React.createElement(
+              "button",
+              {
+                key: b.key,
+                type: "button",
+                className: b.className,
+                onClick: b.action
+              },
+              b.label
+            )
+          )
+        ),
+
+        // Premium modal (mock) - render only when open so it always "does something"
+        isPremiumOpen
+          ? React.createElement(
+              "div",
+              {
+                className: "premium-overlay premium-overlay-open",
+                role: "dialog",
+                "aria-modal": "true",
+                "aria-label": "Calculator Premium"
+              },
+              React.createElement(
+                "div",
+                {
+                  className: "premium-modal premium-modal-open",
+                  onClick: (e) => e.stopPropagation()
+                },
+                React.createElement(
+                  "button",
+                  { className: "premium-close", type: "button", onClick: closePremium, "aria-label": "Close" },
+                  "×"
+                ),
+                React.createElement("div", { className: "premium-badge" }, "Calculator Premium"),
+                React.createElement("div", { className: "premium-title" }, "Unlock all pro features"),
+                React.createElement("div", { className: "premium-price" }, `$${PREMIUM_PRICE.toFixed(2)}`),
+                React.createElement(
+                  "div",
+                  { className: "premium-subtitle" },
+                  "Includes premium advantages + instant checkout methods (mock)."
+                ),
+                React.createElement(
+                  "ul",
+                  { className: "premium-benefits" },
+                  React.createElement("li", null, "Advanced functions: × ÷ % ±"),
+                  React.createElement("li", null, "Clean two-line visor + pro formatting"),
+                  React.createElement("li", null, "Keyboard shortcuts support"),
+                  React.createElement("li", null, "Priority UI updates (mock)")
+                ),
+                React.createElement(
+                  "div",
+                  { className: "premium-methods" },
+                  React.createElement("div", { className: "premium-method" }, "PayPal"),
+                  React.createElement("div", { className: "premium-method" }, "Apple Pay"),
+                  React.createElement("div", { className: "premium-method" }, "Credit Card"),
+                  React.createElement("div", { className: "premium-method" }, "Google Pay")
+                ),
+                React.createElement(
+                  "button",
+                  { type: "button", className: "premium-cta", onClick: closePremium },
+                  "Pay $24.99 (Mock)"
+                )
+              ),
+              React.createElement("div", { className: "premium-overlay-click", onClick: closePremium })
+            )
+          : null
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(React.createElement(Calculator));
+  </script>
+</body>
+</html>
